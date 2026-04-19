@@ -3,159 +3,406 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KOTЯR Terminal</title>
+    <title>KOTЯR Terminal v4.0</title>
     <style>
         :root {
             --bg-color: #050505;
-            --text-color: #a31a1a;
+            --text-color: #ff3333;
+            --glow-color: rgba(255, 51, 51, 0.4);
             --font-family: 'Courier New', Courier, monospace;
         }
 
-        body {
+        body, html {
             background-color: var(--bg-color);
             color: var(--text-color);
             font-family: var(--font-family);
-            margin: 0;
-            padding: 20px;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
+            margin: 0; padding: 0;
+            height: 100vh; overflow: hidden;
+            text-shadow: 0 0 5px var(--glow-color);
         }
 
-        #terminal {
-            flex-grow: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
+        /* Scanlines */
+        body::after {
+            content: " "; display: block; position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 100; background-size: 100% 2px, 3px 100%; pointer-events: none;
         }
 
-        .line { margin-bottom: 8px; white-space: pre-wrap; }
-        .input-line { display: flex; margin-top: 5px; align-items: center; }
-        .prompt { color: #ff3333; margin-right: 10px; font-weight: bold; }
+        #app-container {
+            display: flex; flex-direction: column;
+            height: 100vh; padding: 20px; box-sizing: border-box;
+        }
 
+        /* INPUT TOP FIXED */
+        .input-area {
+            display: flex; align-items: center;
+            border-bottom: 2px solid var(--text-color);
+            padding-bottom: 10px; margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .prompt { color: #ff6666; font-weight: bold; margin-right: 10px; white-space: nowrap; }
         input {
-            background: transparent;
-            border: none;
-            color: var(--text-color);
-            font-family: var(--font-family);
-            font-size: 1.1rem;
-            outline: none;
-            flex-grow: 1;
+            background: transparent; border: none; color: var(--text-color);
+            font-family: var(--font-family); font-size: 1.2rem; outline: none; flex-grow: 1;
         }
 
-        .ascii-header { color: #ff4d4d; font-weight: bold; margin-bottom: 10px; }
-        .link { color: #ff3333; text-decoration: none; border-bottom: 1px dashed #ff3333; }
-        
-        #kitty-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; display: none; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 999;
+        /* OUTPUT AREA - TOP TO BOTTOM */
+        #output {
+            flex-grow: 1; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 8px;
         }
-        #kitty-overlay img { max-width: 90%; max-height: 80%; border: 2px solid #a31a1a; }
+
+        .line { line-height: 1.4; animation: fadeIn 0.1s ease-out; }
+        .list-item { padding-left: 15px; }
+        .ascii-header { 
+            color: #ff4d4d; white-space: pre; 
+            font-size: clamp(6px, 1.1vw, 12px); line-height: 1.1; 
+        }
+
+        /* PLAYER MODE UI */
+        #player-mode { display: none; flex-direction: column; align-items: center; flex-grow: 1; }
+        
+        .player-content {
+            display: flex; width: 100%; justify-content: space-around; align-items: center;
+            margin-top: 20px; flex-wrap: wrap;
+        }
+
+        #cava-canvas { 
+            width: 100%; height: 200px; 
+            background: rgba(255,0,0,0.02); border-top: 1px solid rgba(255,51,51,0.2);
+        }
+
+        /* 3D CUBE - ROTATABLE */
+        .scene { width: 150px; height: 150px; perspective: 600px; cursor: grab; z-index: 50; }
+        .cube { 
+            width: 100%; height: 100%; position: relative; 
+            transform-style: preserve-3d; transition: transform 0.05s linear;
+        }
+        .cube-face { 
+            position: absolute; width: 150px; height: 150px; 
+            border: 2px solid var(--text-color); background: rgba(30,0,0,0.6); 
+        }
+        .cube-face--front  { transform: rotateY(  0deg) translateZ(75px); }
+        .cube-face--right  { transform: rotateY( 90deg) translateZ(75px); }
+        .cube-face--back   { transform: rotateY(180deg) translateZ(75px); }
+        .cube-face--left   { transform: rotateY(-90deg) translateZ(75px); }
+        .cube-face--top    { transform: rotateX( 90deg) translateZ(75px); }
+        .cube-face--bottom { transform: rotateX(-90deg) translateZ(75px); }
+
+        /* OVERLAYS */
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.98); z-index: 200; display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+        }
+        #fatal-error {
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: red; color: black; z-index: 9999; justify-content: center; align-items: center;
+            font-size: 15vw; font-weight: bold; text-align: center; animation: flash 0.1s infinite;
+        }
+        @keyframes flash { 0% { background: red; } 50% { background: black; color: red; } }
+        .link { color: #fff; text-decoration: none; border-bottom: 1px dashed red; }
+        .link:hover { background: red; color: black; }
     </style>
 </head>
 <body>
 
-    <div id="terminal">
+    <div id="app-container">
+        <div class="input-area">
+            <span class="prompt" id="current-prompt">user@kotyar:~$</span>
+            <input type="text" id="main-input" autofocus autocomplete="off">
+        </div>
+
         <div id="output"></div>
-        <div class="input-line">
-            <span class="prompt">user@kotyar:~$</span>
-            <input type="text" id="command-input" autofocus autocomplete="off">
+
+        <div id="player-mode">
+            <div class="player-content">
+                <div class="scene" id="scene3d">
+                    <div class="cube" id="cube">
+                        <div class="cube-face cube-face--front"></div>
+                        <div class="cube-face cube-face--right"></div>
+                        <div class="cube-face cube-face--back"></div>
+                        <div class="cube-face cube-face--left"></div>
+                        <div class="cube-face cube-face--top"></div>
+                        <div class="cube-face cube-face--bottom"></div>
+                    </div>
+                </div>
+                <div id="track-display" style="text-align: center; min-width: 300px;">
+                    <div id="track-name" style="font-size: 1.5rem; border: 1px solid red; padding: 10px;">No Track Loaded</div>
+                    <p style="font-size: 0.8rem;">Commands: load, play, stop, queue, bass-boost [0-100], exit</p>
+                </div>
+            </div>
+            <canvas id="cava-canvas"></canvas>
         </div>
     </div>
 
-    <div id="kitty-overlay" onclick="this.style.display='none'">
-        <img src="" id="kitty-img">
-        <p>Click to close</p>
+    <div id="overlay">
+        <canvas id="snake-canvas" width="400" height="400" style="display:none; border: 2px solid red;"></canvas>
+        <img id="kitty-img" style="display:none; max-height: 80vh; border: 2px solid red;">
+        <p style="margin-top: 20px;">[ PRESS ESC TO EXIT ]</p>
     </div>
 
-    <script>
-        const input = document.getElementById('command-input');
-        const output = document.getElementById('output');
-        const kittyOverlay = document.getElementById('kitty-overlay');
-        const kittyImg = document.getElementById('kitty-img');
+    <div id="fatal-error">404 SYSTEM DELETED</div>
+    <input type="file" id="audio-file" accept="audio/*" multiple style="display: none;">
 
-        const myLinks = {
-            tiktok: "https://www.tiktok.com/@kotar12233",
-            github: "https://github.com/your-username", 
-            discordServer: "https://discord.gg/yfcENEXQM7",
-            telegram: "https://t.me/kotyatgk1",
-            spotify: "https://open.spotify.com/playlist/5SEnGcE7cNuecQZdzyLnfi?si=IrZhJyEIQ2utMefwUuUInQ",
-            steam: "https://steamcommunity.com/id/KOARASTIM"
+    <script>
+        const output = document.getElementById('output');
+        const mainInput = document.getElementById('main-input');
+        const promptSpan = document.getElementById('current-prompt');
+        const playerMode = document.getElementById('player-mode');
+        const audioInput = document.getElementById('audio-file');
+        
+        let currentMode = 'terminal';
+        let queue = [];
+        let currentTrackIdx = -1;
+
+        // --- AUDIO ENGINE ---
+        let audioCtx, source, analyser, bassFilter;
+        const audio = new Audio();
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            source = audioCtx.createMediaElementSource(audio);
+            analyser = audioCtx.createAnalyser();
+            bassFilter = audioCtx.createBiquadFilter();
+
+            bassFilter.type = "lowshelf";
+            bassFilter.frequency.value = 200;
+            bassFilter.gain.value = 0;
+
+            source.connect(bassFilter);
+            bassFilter.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            
+            analyser.fftSize = 256;
+            renderCava();
+        }
+
+        function renderCava() {
+            const canvas = document.getElementById('cava-canvas');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                requestAnimationFrame(draw);
+                analyser.getByteFrequencyData(dataArray);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const barWidth = canvas.width / 60;
+                let x = 0;
+                for(let i = 0; i < 60; i++) {
+                    let barHeight = dataArray[i] * 0.8;
+                    ctx.fillStyle = `rgb(255, ${255 - barHeight}, 0)`;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth - 4, barHeight);
+                    x += barWidth;
+                }
+            }
+            draw();
+        }
+
+        // --- COMMANDS ---
+        const links = {
+            TikTok: "https://www.tiktok.com/@kotar12233",
+            Discord: "https://discord.gg/yfcENEXQM7",
+            Steam: "https://steamcommunity.com/id/KOARASTIM",
+            GitHub: "https://github.com/kotyar",
+            Spotify: "https://open.spotify.com/user/312a35kuqsswomrnbt2ad7hwjhvu?si=162f1b054a984f19",
+            Youtube: "https://www.youtube.com/@kotar1223",
+            "Youtube-Stream": "https://www.youtube.com/@kotar1223stream"
         };
 
         const commands = {
-            help: () => `Available commands:
-  bio    - Show my info and links
-  player - Play music (broken)
-  kitty  - Show a cat
-  clear  - Clear screen`,
-
+            help: () => {
+                const list = [
+                    "• bio    - Social links and contacts",
+                    "• about  - Information about me",
+                    "• player - Launch music station",
+                    "• snake  - Play Snake game",
+                    "• kitty  - Show random cat",
+                    "• clear  - Clear terminal screen"
+                ];
+                list.forEach(item => printLine(item, "list-item"));
+            },
             bio: () => {
-                const ascii = `
+                printLine(`<pre class="ascii-header">
 ██╗  ██╗ ██████╗ ████████╗██╗   ██╗ █████╗ ██████╗ 
 ██║ ██╔╝██╔═══██╗╚══██╔══╝╚██╗ ██╔╝██╔══██╗██╔══██╗
 █████╔╝ ██║   ██║   ██║    ╚████╔╝ ███████║██████╔╝
 ██╔═██╗ ██║   ██║   ██║     ╚██╔╝  ██╔══██║██╔══██╗
-██║  ██╗╚██████╔╝   ██║      ██║   ██║  ██║██║  ██║
-╚═╝  ╚═╝ ╚═════╝    ╚═╝      ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝`;
-                return `<pre class="ascii-header">${ascii}</pre>
-<div>
-  [1] TikTok:   <a href="${myLinks.tiktok}" class="link" target="_blank">TikTok Profile</a><br>
-  [2] GitHub:   <a href="${myLinks.github}" class="link" target="_blank">GitHub</a><br>
-  [3] DServer:  <a href="${myLinks.discordServer}" class="link" target="_blank">Join Server</a><br>
-  [4] Telegram: <a href="${myLinks.telegram}" class="link" target="_blank">Channel</a><br>
-  [5] Spotify:  <a href="${myLinks.spotify}" class="link" target="_blank">Playlist</a><br>
-  [6] Steam:    <a href="${myLinks.steam}" class="link" target="_blank">Steam Profile</a>
-</div>`;
+██║  ██╗╚██████╔╝   ██║      ██║   ██║  ██║██║  ██║</pre>`, "html");
+                for(let key in links) {
+                    printLine(`[+] ${key}: <a href="${links[key]}" target="_blank" class="link">${links[key]}</a>`, "html");
+                }
             },
-
-            player: () => `
-<div style="margin-top:10px">
-    <iframe style="border-radius:12px" src="https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGvPBm9s?utm_source=generator&theme=0" 
-    width="100%" height="152" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-</div>`,
-
+            about: () => {
+                printLine(`<pre class="ascii-header">
+  __   ____  __  _  _  ____ 
+ / _\\ (  _ \\/  \\/ )( \\(_  _)
+/    \\ ) _ (  O ) \\/ (  )(  
+\\_/\\_/(____/\\__/\\____/ (__) </pre>`, "html");
+                const facts = ["• I am KOTYAR", "• Hardcore Gamer", "• Music Enthusiast", "• Terminal Lover"];
+                facts.forEach(f => printLine(f, "list-item"));
+            },
+            player: () => {
+                currentMode = 'player';
+                output.style.display = 'none';
+                playerMode.style.display = 'flex';
+                promptSpan.innerText = "player>";
+                initAudio();
+            },
+            snake: () => { showOverlay('snake'); startSnake(); },
             kitty: () => {
-                kittyImg.src = "https://cataas.com/cat/funny?t=" + new Date().getTime();
-                kittyOverlay.style.display = 'flex';
-                return "Opening kitty.exe...";
+                const img = document.getElementById('kitty-img');
+                img.src = "https://cataas.com/cat/funny?t=" + Date.now();
+                showOverlay('kitty');
             },
+            clear: () => { output.innerHTML = ""; }
+        };
 
-            clear: () => {
-                output.innerHTML = "";
-                return null;
+        const playerCmds = {
+            load: () => audioInput.click(),
+            play: () => {
+                if (queue.length > 0) {
+                    if (currentTrackIdx === -1) currentTrackIdx = 0;
+                    audio.src = URL.createObjectURL(queue[currentTrackIdx]);
+                    audio.play();
+                    document.getElementById('track-name').innerText = "▶ " + queue[currentTrackIdx].name;
+                }
+            },
+            stop: () => { audio.pause(); document.getElementById('track-name').innerText = "⏸ Paused"; },
+            queue: () => {
+                if (queue.length === 0) printLine("Queue is empty.");
+                else queue.forEach((f, i) => printLine(`${i+1}. ${f.name}`));
+            },
+            exit: () => {
+                currentMode = 'terminal';
+                playerMode.style.display = 'none';
+                output.style.display = 'flex';
+                promptSpan.innerText = "user@kotyar:~$";
             }
         };
 
-        function printLine(text, isCommand = false) {
-            if (text === null) return;
-            const line = document.createElement('div');
-            line.className = 'line';
-            line.innerHTML = isCommand ? `<span class="prompt">user@kotyar:~$</span> ${text}` : text;
-            output.appendChild(line);
-            document.getElementById('terminal').scrollTop = document.getElementById('terminal').scrollHeight;
+        // --- CORE ENGINE ---
+        function printLine(text, type = "") {
+            const div = document.createElement('div');
+            div.className = "line " + type;
+            if (type === "html") div.innerHTML = text;
+            else div.innerText = text;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
         }
 
-        input.addEventListener('keydown', (e) => {
+        async function runSudo() {
+            audio.pause();
+            mainInput.disabled = true;
+            const files = ["/bin", "/etc", "/home/user", "/root", "/sys"];
+            for(let f of files) {
+                printLine(`Removing ${f}...`);
+                await new Promise(r => setTimeout(r, 300));
+            }
+            document.getElementById('fatal-error').style.display = 'flex';
+        }
+
+        mainInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                const val = input.value.trim().toLowerCase();
-                printLine(val, true);
-                if (commands[val]) {
-                    printLine(commands[val]());
-                } else if (val !== "") {
-                    printLine("Command not found: " + val + ". Type 'help' for commands.");
+                const val = mainInput.value.trim();
+                const cmd = val.toLowerCase();
+                
+                if (currentMode === 'terminal') {
+                    printLine(`${promptSpan.innerText} ${val}`);
+                    if (cmd === 'sudo rm -rf /*') runSudo();
+                    else if (commands[cmd]) commands[cmd]();
+                    else if (val !== "") printLine(`Unknown command: ${val}. Type 'help'.`);
+                } else {
+                    const parts = val.split(' ');
+                    const pCmd = parts[0].toLowerCase();
+                    if (pCmd === 'bass-boost') {
+                        let gain = parseInt(parts[1]);
+                        if (!isNaN(gain)) {
+                            bassFilter.gain.value = (gain / 100) * 50;
+                            document.getElementById('track-name').innerText = `Bass Boost: ${gain}%`;
+                        }
+                    } else if (playerCmds[pCmd]) playerCmds[pCmd]();
                 }
-                input.value = "";
+                mainInput.value = "";
             }
         });
 
-        document.addEventListener('click', () => input.focus());
+        audioInput.addEventListener('change', (e) => {
+            queue = [...queue, ...e.target.files];
+            document.getElementById('track-name').innerText = `Loaded ${queue.length} tracks. Type 'play'`;
+        });
+
+        // --- 3D INTERACTION ---
+        let isDragging = false, rotX = -20, rotY = 45, px, py;
+        const cube = document.getElementById('cube');
+
+        document.getElementById('scene3d').addEventListener('mousedown', (e) => { isDragging = true; px = e.clientX; py = e.clientY; });
+        document.addEventListener('mouseup', () => isDragging = false);
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            rotY += (e.clientX - px) * 0.5;
+            rotX -= (e.clientY - py) * 0.5;
+            cube.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+            px = e.clientX; py = e.clientY;
+        });
+
+        // Auto-rotation
+        setInterval(() => {
+            if (!isDragging) {
+                rotY += 0.5;
+                cube.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+            }
+        }, 30);
+
+        // --- OVERLAYS & SNAKE ---
+        function showOverlay(type) {
+            document.getElementById('overlay').style.display = 'flex';
+            document.getElementById('snake-canvas').style.display = type === 'snake' ? 'block' : 'none';
+            document.getElementById('kitty-img').style.display = type === 'kitty' ? 'block' : 'none';
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.getElementById('overlay').style.display = 'none';
+                clearInterval(snakeInt);
+            }
+        });
+
+        let snakeInt;
+        function startSnake() {
+            const canvas = document.getElementById('snake-canvas');
+            const ctx = canvas.getContext('2d');
+            let s = [{x:10, y:10}], d = {x:1, y:0}, f = {x:15, y:15};
+            
+            window.onkeydown = (e) => {
+                if(e.key === "ArrowUp" && d.y !== 1) d = {x:0, y:-1};
+                if(e.key === "ArrowDown" && d.y !== -1) d = {x:0, y:1};
+                if(e.key === "ArrowLeft" && d.x !== 1) d = {x:-1, y:0};
+                if(e.key === "ArrowRight" && d.x !== -1) d = {x:1, y:0};
+            };
+
+            snakeInt = setInterval(() => {
+                let h = {x: s[0].x + d.x, y: s[0].y + d.y};
+                s.unshift(h);
+                if(h.x === f.x && h.y === f.y) f = {x:Math.floor(Math.random()*20), y:Math.floor(Math.random()*20)};
+                else s.pop();
+
+                if(h.x<0||h.x>=20||h.y<0||h.y>=20) { s=[{x:10,y:10}]; d={x:1,y:0}; }
+
+                ctx.fillStyle = "black"; ctx.fillRect(0,0,400,400);
+                ctx.fillStyle = "red"; s.forEach(p => ctx.fillRect(p.x*20, p.y*20, 18, 18));
+                ctx.fillStyle = "white"; ctx.fillRect(f.x*20, f.y*20, 18, 18);
+            }, 100);
+        }
 
         window.onload = () => {
-            printLine("Type 'help' to see available commands.");
-            input.focus();
+            printLine("KOTYAR OS [Version 4.0.12]");
+            printLine("System status: Ready. Type 'help' to begin.");
         };
     </script>
 </body>
